@@ -351,6 +351,84 @@ class ChurnPredictor:
         return results, best_model_name
 
 
+def load_saved_models():
+    """Load saved models and preprocessing components"""
+    try:
+        models = {}
+        models['rf'] = joblib.load('random_forest_model.pkl')
+        models['lr'] = joblib.load('logistic_regression_model.pkl')
+        models['scaler'] = joblib.load('scaler.pkl')
+        models['pca'] = joblib.load('pca.pkl') if os.path.exists('pca.pkl') else None
+        models['encoders'] = joblib.load('label_encoders.pkl') if os.path.exists('label_encoders.pkl') else {}
+        models['metadata'] = joblib.load('model_metadata.pkl') if os.path.exists('model_metadata.pkl') else None
+        return models
+    except FileNotFoundError as e:
+        return None
+
+
+def predict_churn(user_input, models):
+    """Predict churn for user input"""
+    try:
+        # Expected feature order (excluding CustomerID and Churn)
+        feature_order = [
+            'Tenure', 'PreferredLoginDevice', 'CityTier', 'WarehouseToHome',
+            'PreferredPaymentMode', 'Gender', 'HourSpendOnApp', 'NumberOfDeviceRegistered',
+            'PreferedOrderCat', 'SatisfactionScore', 'MaritalStatus', 'NumberOfAddress',
+            'Complain', 'OrderAmountHikeFromlastYear', 'CouponUsed', 'OrderCount',
+            'DaySinceLastOrder', 'CashbackAmount'
+        ]
+        
+        # Encode categorical features
+        encoded_input = {}
+        for col in feature_order:
+            if col in user_input:
+                value = user_input[col]
+                # Encode if categorical and encoder exists
+                if col in models.get('encoders', {}):
+                    encoder = models['encoders'][col]
+                    try:
+                        encoded_input[col] = encoder.transform([str(value)])[0]
+                    except (ValueError, KeyError):
+                        # Handle unseen categories - use most common or 0
+                        encoded_input[col] = 0
+                else:
+                    # Numerical feature
+                    encoded_input[col] = float(value)
+            else:
+                # Missing feature - use 0 or median
+                encoded_input[col] = 0.0
+        
+        # Convert to numpy array in correct order
+        feature_values = np.array([encoded_input[col] for col in feature_order]).reshape(1, -1)
+        
+        # Scale features
+        scaled_features = models['scaler'].transform(feature_values)
+        
+        # Apply PCA if available
+        if models['pca'] is not None:
+            scaled_features = models['pca'].transform(scaled_features)
+        
+        # Predict with Random Forest
+        rf_prediction = models['rf'].predict(scaled_features)[0]
+        rf_probability = models['rf'].predict_proba(scaled_features)[0]
+        
+        # Predict with Logistic Regression
+        lr_prediction = models['lr'].predict(scaled_features)[0]
+        lr_probability = models['lr'].predict_proba(scaled_features)[0]
+        
+        return {
+            'rf_prediction': rf_prediction,
+            'rf_probability': rf_probability,
+            'lr_prediction': lr_prediction,
+            'lr_probability': lr_probability
+        }
+    except Exception as e:
+        st.error(f"Prediction error: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
+        return None
+
+
 def main():
     """Main application"""
     
@@ -389,7 +467,7 @@ def main():
             st.rerun()
     
     # Main content area
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "🔍 Data Analysis", "🤖 Model Training", "📈 Results"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "🔍 Data Analysis", "🤖 Model Training", "📈 Results", "🔮 Predict Churn"])
     
     with tab1:
         st.markdown("### Project Overview")
@@ -727,6 +805,160 @@ def main():
             st.dataframe(report_df, use_container_width=True)
         else:
             st.info("👆 Please train the model first to view results")
+    
+    with tab5:
+        st.markdown("### 🔮 Predict Customer Churn")
+        st.markdown("Enter customer details below to predict churn probability.")
+        
+        # Load models
+        models = load_saved_models()
+        
+        if models is None:
+            st.warning("⚠️ Models not found! Please train the model first using the 'Model Training' tab.")
+            st.info("After training, the models will be saved and available for predictions.")
+        else:
+            st.success("✓ Models loaded successfully!")
+            
+            # Create form for user input
+            with st.form("churn_prediction_form"):
+                st.markdown("#### Customer Information")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    tenure = st.number_input("Tenure (months)", min_value=0.0, max_value=100.0, value=12.0, step=1.0)
+                    city_tier = st.selectbox("City Tier", [1, 2, 3], index=1)
+                    warehouse_to_home = st.number_input("Warehouse to Home Distance (km)", min_value=0.0, max_value=100.0, value=10.0, step=1.0)
+                    hour_spend_on_app = st.number_input("Hours Spent on App", min_value=0.0, max_value=24.0, value=3.0, step=0.5)
+                    number_of_devices = st.number_input("Number of Devices Registered", min_value=1, max_value=10, value=2, step=1)
+                    satisfaction_score = st.selectbox("Satisfaction Score", [1, 2, 3, 4, 5], index=2)
+                    number_of_addresses = st.number_input("Number of Addresses", min_value=1, max_value=20, value=5, step=1)
+                    complain = st.selectbox("Has Complained", [0, 1], format_func=lambda x: "Yes" if x == 1 else "No")
+                
+                with col2:
+                    preferred_login_device = st.selectbox("Preferred Login Device", 
+                        ["Mobile Phone", "Phone", "Computer", "Tablet"])
+                    preferred_payment_mode = st.selectbox("Preferred Payment Mode",
+                        ["Debit Card", "Credit Card", "UPI", "Cash on Delivery", "E wallet", "COD"])
+                    gender = st.selectbox("Gender", ["Male", "Female"])
+                    preferred_order_cat = st.selectbox("Preferred Order Category",
+                        ["Mobile", "Laptop & Accessory", "Grocery", "Fashion", "Others"])
+                    marital_status = st.selectbox("Marital Status", ["Single", "Married"])
+                    order_amount_hike = st.number_input("Order Amount Hike from Last Year (%)", 
+                        min_value=0.0, max_value=50.0, value=10.0, step=1.0)
+                    coupon_used = st.number_input("Coupon Used (count)", min_value=0.0, max_value=20.0, value=1.0, step=1.0)
+                    order_count = st.number_input("Order Count", min_value=0.0, max_value=50.0, value=5.0, step=1.0)
+                
+                col3, col4 = st.columns(2)
+                with col3:
+                    day_since_last_order = st.number_input("Days Since Last Order", min_value=0.0, max_value=100.0, value=3.0, step=1.0)
+                with col4:
+                    cashback_amount = st.number_input("Cashback Amount", min_value=0.0, max_value=500.0, value=150.0, step=10.0)
+                
+                submitted = st.form_submit_button("🔮 Predict Churn", type="primary", use_container_width=True)
+                
+                if submitted:
+                    # Prepare input data
+                    user_input = {
+                        'Tenure': tenure,
+                        'PreferredLoginDevice': preferred_login_device,
+                        'CityTier': city_tier,
+                        'WarehouseToHome': warehouse_to_home,
+                        'PreferredPaymentMode': preferred_payment_mode,
+                        'Gender': gender,
+                        'HourSpendOnApp': hour_spend_on_app,
+                        'NumberOfDeviceRegistered': number_of_devices,
+                        'PreferedOrderCat': preferred_order_cat,
+                        'SatisfactionScore': satisfaction_score,
+                        'MaritalStatus': marital_status,
+                        'NumberOfAddress': number_of_addresses,
+                        'Complain': complain,
+                        'OrderAmountHikeFromlastYear': order_amount_hike,
+                        'CouponUsed': coupon_used,
+                        'OrderCount': order_count,
+                        'DaySinceLastOrder': day_since_last_order,
+                        'CashbackAmount': cashback_amount
+                    }
+                    
+                    # Make prediction
+                    with st.spinner("Predicting..."):
+                        prediction_result = predict_churn(user_input, models)
+                    
+                    if prediction_result:
+                        st.success("✅ Prediction completed!")
+                        st.divider()
+                        
+                        # Display results
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("### 🌲 Random Forest Prediction")
+                            rf_churn_prob = prediction_result['rf_probability'][1] * 100
+                            rf_no_churn_prob = prediction_result['rf_probability'][0] * 100
+                            rf_pred = prediction_result['rf_prediction']
+                            
+                            if rf_pred == 1:
+                                st.error(f"**Prediction: CHURN** ⚠️")
+                            else:
+                                st.success(f"**Prediction: NO CHURN** ✓")
+                            
+                            st.metric("Churn Probability", f"{rf_churn_prob:.2f}%", 
+                                     f"{rf_churn_prob - 50:.2f}%")
+                            st.metric("No Churn Probability", f"{rf_no_churn_prob:.2f}%")
+                            
+                            # Progress bar
+                            st.progress(rf_churn_prob / 100)
+                        
+                        with col2:
+                            st.markdown("### 📊 Logistic Regression Prediction")
+                            lr_churn_prob = prediction_result['lr_probability'][1] * 100
+                            lr_no_churn_prob = prediction_result['lr_probability'][0] * 100
+                            lr_pred = prediction_result['lr_prediction']
+                            
+                            if lr_pred == 1:
+                                st.error(f"**Prediction: CHURN** ⚠️")
+                            else:
+                                st.success(f"**Prediction: NO CHURN** ✓")
+                            
+                            st.metric("Churn Probability", f"{lr_churn_prob:.2f}%",
+                                     f"{lr_churn_prob - 50:.2f}%")
+                            st.metric("No Churn Probability", f"{lr_no_churn_prob:.2f}%")
+                            
+                            # Progress bar
+                            st.progress(lr_churn_prob / 100)
+                        
+                        st.divider()
+                        
+                        # Model comparison
+                        st.markdown("### 📈 Model Comparison")
+                        comparison_df = pd.DataFrame({
+                            'Model': ['Random Forest', 'Logistic Regression'],
+                            'Prediction': ['Churn' if prediction_result['rf_prediction'] == 1 else 'No Churn',
+                                         'Churn' if prediction_result['lr_prediction'] == 1 else 'No Churn'],
+                            'Churn Probability': [f"{rf_churn_prob:.2f}%", f"{lr_churn_prob:.2f}%"],
+                            'Confidence': ['High' if max(rf_churn_prob, rf_no_churn_prob) > 70 else 'Medium',
+                                         'High' if max(lr_churn_prob, lr_no_churn_prob) > 70 else 'Medium']
+                        })
+                        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+                        
+                        # Recommendations
+                        st.markdown("### 💡 Recommendations")
+                        if rf_pred == 1 or lr_pred == 1:
+                            st.warning("""
+                            **Customer is at risk of churning!** Consider:
+                            - Offering personalized discounts or promotions
+                            - Reaching out with customer support
+                            - Providing loyalty rewards
+                            - Sending re-engagement campaigns
+                            """)
+                        else:
+                            st.success("""
+                            **Customer is likely to stay!** Continue to:
+                            - Maintain good service quality
+                            - Send regular updates and offers
+                            - Encourage app usage
+                            - Reward loyalty
+                            """)
 
 
 if __name__ == "__main__":
