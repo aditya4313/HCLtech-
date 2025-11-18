@@ -470,7 +470,7 @@ Modify PCA variance threshold:
 self.split_and_scale(X_balanced, y_balanced, use_pca=True, variance_threshold=0.95)
 ```
 - Lower threshold (0.90): More aggressive reduction, faster training
-- Higher threshold (0.99): Less reduction, more features
+- Higher threshold (0.99): Less reduction, more feature
 
 ---
 
