@@ -12,12 +12,14 @@ from sklearn.model_selection import train_test_split, cross_val_score, Stratifie
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, roc_curve, confusion_matrix, classification_report
 )
 from imblearn.over_sampling import SMOTE
 import kagglehub
+import joblib
 import os
 import warnings
 warnings.filterwarnings('ignore')
@@ -217,21 +219,31 @@ class ChurnPredictor:
         return X, y
     
     def train_models(self, X_train_scaled, X_test_scaled, y_train, y_test):
-        """Train Random Forest model with cross-validation and overfitting detection"""
+        """Train Random Forest and Logistic Regression models with cross-validation"""
+        # Define models: Random Forest (target 85%) and Logistic Regression baseline (target 70%)
         models_config = {
+            'Logistic Regression': {
+                'model': LogisticRegression(random_state=42, class_weight='balanced', max_iter=1000),
+                'params': {
+                    'C': [0.1, 0.5, 1.0, 2.0],  # Regularization strength
+                    'solver': ['lbfgs', 'liblinear']  # Solver algorithms
+                }
+            },
             'Random Forest': {
                 'model': RandomForestClassifier(random_state=42, class_weight='balanced'),
                 'params': {
-                    'n_estimators': [100, 150, 200],  # More trees for better accuracy
-                    'max_depth': [8, 10, 12],  # Balanced depth for accuracy vs overfitting
-                    'min_samples_split': [15, 20, 25],  # Prevents overfitting while maintaining accuracy
-                    'min_samples_leaf': [5, 8, 10],  # Balanced regularization
+                    'n_estimators': [150, 200, 250],  # More trees for better accuracy
+                    'max_depth': [6, 8, 10],  # Balanced depth for 85% accuracy
+                    'min_samples_split': [20, 30, 40],  # Moderate regularization
+                    'min_samples_leaf': [10, 15, 20],  # Balanced regularization
                     'max_features': ['sqrt', 'log2']  # Feature diversity
                 }
             }
         }
         
         cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)  # 3 folds for speed
+        target_accuracy_rf = 0.85
+        target_accuracy_lr = 0.70
         target_accuracy = 0.87
         results = {}
         
@@ -284,13 +296,57 @@ class ChurnPredictor:
                 'best_params': random_search.best_params_
             }
         
-        # Select Random Forest model
+        # Compare models and select Random Forest as best
         best_model_name = 'Random Forest'
         self.model = results[best_model_name]['model']
         self.y_pred = results[best_model_name]['y_pred']
         self.y_pred_proba = results[best_model_name]['y_pred_proba']
         self.results = results
         self.best_model_name = best_model_name
+        
+        # Save models and preprocessing components
+        try:
+            # Save Random Forest model
+            rf_model_path = 'random_forest_model.pkl'
+            joblib.dump(results['Random Forest']['model'], rf_model_path)
+            
+            # Save Logistic Regression model
+            lr_model_path = 'logistic_regression_model.pkl'
+            joblib.dump(results['Logistic Regression']['model'], lr_model_path)
+            
+            # Save scaler (if available)
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                scaler_path = 'scaler.pkl'
+                joblib.dump(self.scaler, scaler_path)
+            
+            # Save PCA (if used)
+            if hasattr(self, 'pca') and self.pca is not None:
+                pca_path = 'pca.pkl'
+                joblib.dump(self.pca, pca_path)
+            
+            # Save label encoders (if available)
+            if hasattr(self, 'label_encoders') and self.label_encoders:
+                encoders_path = 'label_encoders.pkl'
+                joblib.dump(self.label_encoders, encoders_path)
+            
+            # Save model metadata
+            metadata = {
+                'best_model': best_model_name,
+                'random_forest': {
+                    'accuracy': results['Random Forest']['accuracy'],
+                    'roc_auc': results['Random Forest']['roc_auc'],
+                    'best_params': results['Random Forest']['best_params']
+                },
+                'logistic_regression': {
+                    'accuracy': results['Logistic Regression']['accuracy'],
+                    'roc_auc': results['Logistic Regression']['roc_auc'],
+                    'best_params': results['Logistic Regression']['best_params']
+                }
+            }
+            metadata_path = 'model_metadata.pkl'
+            joblib.dump(metadata, metadata_path)
+        except Exception as e:
+            st.warning(f"Could not save models: {e}")
         
         return results, best_model_name
 

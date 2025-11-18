@@ -218,7 +218,7 @@ SMOTE creates synthetic samples of the minority class by:
 ## 📁 Project Structure
 
 ```
-ml-dravit/
+customer-churn/
 │
 ├── customer_churn_prediction.py  # Main ML pipeline script
 ├── customer_churn_prediction.ipynb  # Jupyter notebook (complete pipeline)
@@ -226,9 +226,7 @@ ml-dravit/
 ├── requirements.txt              # Python dependencies
 ├── README.md                     # Project documentation
 ├── DEPLOYMENT.md                 # Detailed deployment guide
-├── render.yaml                   # Render deployment configuration
 ├── .streamlit/config.toml        # Streamlit configuration
-├── setup.sh                      # Setup script
 │
 ├── confusion_matrix.png          # Generated visualization
 ├── roc_curve.png                 # Generated visualization

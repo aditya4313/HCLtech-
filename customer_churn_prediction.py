@@ -19,10 +19,12 @@ from sklearn.model_selection import train_test_split, cross_val_score, Stratifie
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, roc_curve, confusion_matrix, classification_report
 )
+import joblib
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.combine import SMOTETomek
@@ -306,21 +308,27 @@ class ChurnPredictor:
         return self.X_train_scaled, self.X_test_scaled, self.y_train, self.y_test
     
     def train_models(self):
-        """Train Random Forest model with cross-validation and overfitting detection"""
+        """Train Random Forest and Logistic Regression models with cross-validation"""
         print("\n" + "=" * 60)
-        print("STEP 6: Model Training with Cross-Validation (Random Forest)")
+        print("STEP 6: Model Training with Cross-Validation")
         print("=" * 60)
         
-        # Define Random Forest model optimized for accuracy with minimal overfitting
-        # Using RandomizedSearchCV for faster, more efficient hyperparameter search
+        # Define models: Random Forest (target 85%) and Logistic Regression baseline (target 70%)
         models_config = {
+            'Logistic Regression': {
+                'model': LogisticRegression(random_state=42, class_weight='balanced', max_iter=1000),
+                'params': {
+                    'C': [0.1, 0.5, 1.0, 2.0],  # Regularization strength
+                    'solver': ['lbfgs', 'liblinear']  # Solver algorithms
+                }
+            },
             'Random Forest': {
                 'model': RandomForestClassifier(random_state=42, class_weight='balanced'),
                 'params': {
-                    'n_estimators': [100, 150, 200],  # More trees for better accuracy
-                    'max_depth': [8, 10, 12],  # Balanced depth for accuracy vs overfitting
-                    'min_samples_split': [15, 20, 25],  # Prevents overfitting while maintaining accuracy
-                    'min_samples_leaf': [5, 8, 10],  # Balanced regularization
+                    'n_estimators': [150, 200, 250],  # More trees for better accuracy
+                    'max_depth': [6, 8, 10],  # Balanced depth for 85% accuracy
+                    'min_samples_split': [20, 30, 40],  # Moderate regularization
+                    'min_samples_leaf': [10, 15, 20],  # Balanced regularization
                     'max_features': ['sqrt', 'log2']  # Feature diversity
                 }
             }
@@ -328,7 +336,8 @@ class ChurnPredictor:
         
         # Cross-validation setup (3 folds for faster training)
         cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-        target_accuracy = 0.87
+        target_accuracy_rf = 0.85
+        target_accuracy_lr = 0.70
         
         results = {}
         
@@ -339,7 +348,6 @@ class ChurnPredictor:
             
             # Perform RandomizedSearchCV for faster hyperparameter tuning
             print("  Performing RandomizedSearchCV for hyperparameter tuning...")
-            print("  (Searching 15 random combinations for faster training)")
             random_search = RandomizedSearchCV(
                 config['model'],
                 config['params'],
@@ -416,44 +424,124 @@ class ChurnPredictor:
             print(f"    F1-Score: {f1:.4f}")
             print(f"    ROC-AUC: {roc_auc:.4f}")
         
-        # Select best model (only Random Forest)
+        # Compare models and select best
         print(f"\n{'='*60}")
-        print("Model Selection (Random Forest)")
+        print("Model Comparison")
         print(f"{'='*60}")
         
+        # Display both models
+        for name, result in results.items():
+            print(f"\n{name}:")
+            print(f"  Test Accuracy: {result['accuracy']:.4f} ({result['accuracy']*100:.2f}%)")
+            print(f"  Train Accuracy: {result['train_accuracy']:.4f} ({result['train_accuracy']*100:.2f}%)")
+            print(f"  CV Mean Accuracy: {result['cv_mean']:.4f} (+/- {result['cv_std']*2:.4f})")
+            print(f"  Overfitting Gap: {result['overfitting_gap']:.4f}")
+            print(f"  ROC-AUC: {result['roc_auc']:.4f}")
+            
+            # Check target accuracy
+            if name == 'Random Forest':
+                if abs(result['accuracy'] - target_accuracy_rf) < 0.02:
+                    print(f"  ✓ Target accuracy (~85%) achieved!")
+                else:
+                    print(f"  Current accuracy: {result['accuracy']*100:.2f}%, Target: {target_accuracy_rf*100:.2f}%")
+            elif name == 'Logistic Regression':
+                if abs(result['accuracy'] - target_accuracy_lr) < 0.02:
+                    print(f"  ✓ Target accuracy (~70%) achieved!")
+                else:
+                    print(f"  Current accuracy: {result['accuracy']*100:.2f}%, Target: {target_accuracy_lr*100:.2f}%")
+        
+        # Select Random Forest as best model (target 85%)
         best_model_name = 'Random Forest'
         best_result = results[best_model_name]
         
-        print(f"\n✓ Selected Model: {best_model_name}")
+        print(f"\n{'='*60}")
+        print("Selected Model: Random Forest")
+        print(f"{'='*60}")
         print(f"  Test Accuracy: {best_result['accuracy']:.4f} ({best_result['accuracy']*100:.2f}%)")
-        print(f"  CV Mean Accuracy: {best_result['cv_mean']:.4f} (+/- {best_result['cv_std']*2:.4f})")
         print(f"  Overfitting Gap: {best_result['overfitting_gap']:.4f}")
-        print(f"  ROC-AUC: {best_result['roc_auc']:.4f}")
         
-        # Check overfitting and suggest improvements if needed
-        if best_result['overfitting_gap'] > 0.05:
-            print(f"\n⚠ Overfitting detected! Current gap: {best_result['overfitting_gap']:.4f}")
-            print(f"  If gap is still > 5%, consider:")
-            print(f"  - Further reducing max_depth to [3, 5]")
-            print(f"  - Increasing min_samples_split to [30, 50, 100]")
-            print(f"  - Increasing min_samples_leaf to [10, 15, 20]")
-            print(f"  - Reducing n_estimators to [30, 50]")
-        elif best_result['overfitting_gap'] > 0.02:
-            print(f"\n✓ Acceptable overfitting (gap: {best_result['overfitting_gap']:.4f})")
+        if best_result['overfitting_gap'] < 0.05:
+            print(f"  ✓ Good generalization (overfitting gap < 5%)")
         else:
-            print(f"\n✓ Excellent generalization (overfitting gap: {best_result['overfitting_gap']:.4f})")
+            print(f"  ⚠ Overfitting detected (gap: {best_result['overfitting_gap']:.4f})")
         
-        # Check if target accuracy is achieved
-        if abs(best_result['accuracy'] - target_accuracy) < 0.02:
-            print(f"\n✓ Target accuracy (~87%) achieved!")
-        else:
-            print(f"\n  Current accuracy: {best_result['accuracy']*100:.2f}%, Target: {target_accuracy*100:.2f}%")
-        
+        # Store models
         self.model = best_result['model']
         self.y_pred = best_result['y_pred']
         self.y_pred_proba = best_result['y_pred_proba']
         self.results = results
         self.best_model_name = best_model_name
+        
+        # Save models and preprocessing components
+        print(f"\n{'='*60}")
+        print("Saving Models and Preprocessing Components")
+        print(f"{'='*60}")
+        
+        # Save Random Forest model
+        rf_model_path = 'random_forest_model.pkl'
+        joblib.dump(results['Random Forest']['model'], rf_model_path)
+        print(f"✓ Random Forest model saved: {rf_model_path}")
+        
+        # Save Logistic Regression model
+        lr_model_path = 'logistic_regression_model.pkl'
+        joblib.dump(results['Logistic Regression']['model'], lr_model_path)
+        print(f"✓ Logistic Regression model saved: {lr_model_path}")
+        
+        # Save scaler
+        scaler_path = 'scaler.pkl'
+        joblib.dump(self.scaler, scaler_path)
+        print(f"✓ Scaler saved: {scaler_path}")
+        
+        # Save PCA if used
+        if self.use_pca and hasattr(self, 'pca') and self.pca is not None:
+            pca_path = 'pca.pkl'
+            joblib.dump(self.pca, pca_path)
+            print(f"✓ PCA saved: {pca_path}")
+        
+        # Save label encoders
+        if hasattr(self, 'label_encoders') and self.label_encoders:
+            encoders_path = 'label_encoders.pkl'
+            joblib.dump(self.label_encoders, encoders_path)
+            print(f"✓ Label encoders saved: {encoders_path}")
+        
+        # Save feature names (for reference)
+        if hasattr(self, 'X') and self.X is not None:
+            feature_names_path = 'feature_names.pkl'
+            feature_names = {
+                'original_features': list(self.X.columns) if hasattr(self.X, 'columns') else None,
+                'n_features_original': self.X.shape[1] if hasattr(self.X, 'shape') else None,
+                'n_features_after_pca': self.n_components if hasattr(self, 'n_components') else None
+            }
+            joblib.dump(feature_names, feature_names_path)
+            print(f"✓ Feature names saved: {feature_names_path}")
+        
+        # Save model metadata
+        metadata = {
+            'best_model': best_model_name,
+            'random_forest': {
+                'accuracy': results['Random Forest']['accuracy'],
+                'train_accuracy': results['Random Forest']['train_accuracy'],
+                'cv_mean': results['Random Forest']['cv_mean'],
+                'cv_std': results['Random Forest']['cv_std'],
+                'overfitting_gap': results['Random Forest']['overfitting_gap'],
+                'roc_auc': results['Random Forest']['roc_auc'],
+                'best_params': results['Random Forest']['best_params']
+            },
+            'logistic_regression': {
+                'accuracy': results['Logistic Regression']['accuracy'],
+                'train_accuracy': results['Logistic Regression']['train_accuracy'],
+                'cv_mean': results['Logistic Regression']['cv_mean'],
+                'cv_std': results['Logistic Regression']['cv_std'],
+                'overfitting_gap': results['Logistic Regression']['overfitting_gap'],
+                'roc_auc': results['Logistic Regression']['roc_auc'],
+                'best_params': results['Logistic Regression']['best_params']
+            },
+            'pca_used': self.use_pca if hasattr(self, 'use_pca') else False,
+            'pca_variance_retained': self.explained_variance_ratio_ if (hasattr(self, 'use_pca') and self.use_pca and hasattr(self, 'explained_variance_ratio_')) else None
+        }
+        metadata_path = 'model_metadata.pkl'
+        joblib.dump(metadata, metadata_path)
+        print(f"✓ Model metadata saved: {metadata_path}")
         
         return results
     
@@ -675,9 +763,9 @@ def main():
     else:
         print("  ⚠ Caution: Model variability detected")
     
-    target_accuracy = 0.87
+    target_accuracy = 0.85
     if abs(metrics['accuracy'] - target_accuracy) < 0.02:
-        print(f"\n✓ Target accuracy (~87%) achieved!")
+        print(f"\n✓ Target accuracy (~85%) achieved!")
     else:
         print(f"\n  Current accuracy: {metrics['accuracy']*100:.2f}%, Target: {target_accuracy*100:.2f}%")
 
