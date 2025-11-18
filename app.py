@@ -20,6 +20,7 @@ from sklearn.metrics import (
 from imblearn.over_sampling import SMOTE
 import kagglehub
 import joblib
+import json
 import os
 import warnings
 warnings.filterwarnings('ignore')
@@ -232,10 +233,10 @@ class ChurnPredictor:
             'Random Forest': {
                 'model': RandomForestClassifier(random_state=42, class_weight='balanced'),
                 'params': {
-                    'n_estimators': [150, 200, 250],  # More trees for better accuracy
-                    'max_depth': [6, 8, 10],  # Balanced depth for 85% accuracy
-                    'min_samples_split': [20, 30, 40],  # Moderate regularization
-                    'min_samples_leaf': [10, 15, 20],  # Balanced regularization
+                    'n_estimators': [150, 200],  # Moderate number of trees
+                    'max_depth': [5, 6, 7],  # Shallower trees to reduce overfitting
+                    'min_samples_split': [40, 50, 60],  # Higher threshold to prevent overfitting
+                    'min_samples_leaf': [20, 25, 30],  # Strong regularization
                     'max_features': ['sqrt', 'log2']  # Feature diversity
                 }
             }
@@ -329,20 +330,60 @@ class ChurnPredictor:
                 encoders_path = 'label_encoders.pkl'
                 joblib.dump(self.label_encoders, encoders_path)
             
-            # Save model metadata
+            # Create models directory
+            os.makedirs('models', exist_ok=True)
+            
+            # Save models in models directory (can be tracked in Git)
+            models_dir = 'models'
+            rf_model_path_tracked = os.path.join(models_dir, 'random_forest_model.pkl')
+            lr_model_path_tracked = os.path.join(models_dir, 'logistic_regression_model.pkl')
+            joblib.dump(results['Random Forest']['model'], rf_model_path_tracked)
+            joblib.dump(results['Logistic Regression']['model'], lr_model_path_tracked)
+            
+            # Save scaler, PCA, encoders in models directory
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                scaler_path_tracked = os.path.join(models_dir, 'scaler.pkl')
+                joblib.dump(self.scaler, scaler_path_tracked)
+            
+            if hasattr(self, 'pca') and self.pca is not None:
+                pca_path_tracked = os.path.join(models_dir, 'pca.pkl')
+                joblib.dump(self.pca, pca_path_tracked)
+            
+            if hasattr(self, 'label_encoders') and self.label_encoders:
+                encoders_path_tracked = os.path.join(models_dir, 'label_encoders.pkl')
+                joblib.dump(self.label_encoders, encoders_path_tracked)
+            
+            # Save model metadata as JSON (Git-friendly)
             metadata = {
                 'best_model': best_model_name,
                 'random_forest': {
-                    'accuracy': results['Random Forest']['accuracy'],
-                    'roc_auc': results['Random Forest']['roc_auc'],
-                    'best_params': results['Random Forest']['best_params']
+                    'accuracy': float(results['Random Forest']['accuracy']),
+                    'train_accuracy': float(results['Random Forest']['train_accuracy']),
+                    'cv_mean': float(results['Random Forest']['cv_mean']),
+                    'cv_std': float(results['Random Forest']['cv_std']),
+                    'overfitting_gap': float(results['Random Forest']['overfitting_gap']),
+                    'roc_auc': float(results['Random Forest']['roc_auc']),
+                    'best_params': {k: (float(v) if isinstance(v, (np.integer, np.floating)) else v) 
+                                   for k, v in results['Random Forest']['best_params'].items()}
                 },
                 'logistic_regression': {
-                    'accuracy': results['Logistic Regression']['accuracy'],
-                    'roc_auc': results['Logistic Regression']['roc_auc'],
-                    'best_params': results['Logistic Regression']['best_params']
+                    'accuracy': float(results['Logistic Regression']['accuracy']),
+                    'train_accuracy': float(results['Logistic Regression']['train_accuracy']),
+                    'cv_mean': float(results['Logistic Regression']['cv_mean']),
+                    'cv_std': float(results['Logistic Regression']['cv_std']),
+                    'overfitting_gap': float(results['Logistic Regression']['overfitting_gap']),
+                    'roc_auc': float(results['Logistic Regression']['roc_auc']),
+                    'best_params': {k: (float(v) if isinstance(v, (np.integer, np.floating)) else v) 
+                                   for k, v in results['Logistic Regression']['best_params'].items()}
                 }
             }
+            
+            # Save as JSON (Git-friendly, can be pushed to GitHub)
+            metadata_json_path = 'model_metadata.json'
+            with open(metadata_json_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Also save as pickle for compatibility
             metadata_path = 'model_metadata.pkl'
             joblib.dump(metadata, metadata_path)
         except Exception as e:
@@ -355,12 +396,30 @@ def load_saved_models():
     """Load saved models and preprocessing components"""
     try:
         models = {}
-        models['rf'] = joblib.load('random_forest_model.pkl')
-        models['lr'] = joblib.load('logistic_regression_model.pkl')
-        models['scaler'] = joblib.load('scaler.pkl')
-        models['pca'] = joblib.load('pca.pkl') if os.path.exists('pca.pkl') else None
-        models['encoders'] = joblib.load('label_encoders.pkl') if os.path.exists('label_encoders.pkl') else {}
-        models['metadata'] = joblib.load('model_metadata.pkl') if os.path.exists('model_metadata.pkl') else None
+        models_dir = 'models'
+        
+        # Try loading from models directory first, then root directory
+        rf_path = os.path.join(models_dir, 'random_forest_model.pkl') if os.path.exists(os.path.join(models_dir, 'random_forest_model.pkl')) else 'random_forest_model.pkl'
+        lr_path = os.path.join(models_dir, 'logistic_regression_model.pkl') if os.path.exists(os.path.join(models_dir, 'logistic_regression_model.pkl')) else 'logistic_regression_model.pkl'
+        scaler_path = os.path.join(models_dir, 'scaler.pkl') if os.path.exists(os.path.join(models_dir, 'scaler.pkl')) else 'scaler.pkl'
+        pca_path = os.path.join(models_dir, 'pca.pkl') if os.path.exists(os.path.join(models_dir, 'pca.pkl')) else 'pca.pkl'
+        encoders_path = os.path.join(models_dir, 'label_encoders.pkl') if os.path.exists(os.path.join(models_dir, 'label_encoders.pkl')) else 'label_encoders.pkl'
+        
+        models['rf'] = joblib.load(rf_path)
+        models['lr'] = joblib.load(lr_path)
+        models['scaler'] = joblib.load(scaler_path)
+        models['pca'] = joblib.load(pca_path) if os.path.exists(pca_path) else None
+        models['encoders'] = joblib.load(encoders_path) if os.path.exists(encoders_path) else {}
+        
+        # Load metadata (prefer JSON, fallback to PKL)
+        if os.path.exists('model_metadata.json'):
+            with open('model_metadata.json', 'r') as f:
+                models['metadata'] = json.load(f)
+        elif os.path.exists('model_metadata.pkl'):
+            models['metadata'] = joblib.load('model_metadata.pkl')
+        else:
+            models['metadata'] = None
+            
         return models
     except FileNotFoundError as e:
         return None

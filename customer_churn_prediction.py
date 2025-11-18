@@ -25,6 +25,7 @@ from sklearn.metrics import (
     roc_auc_score, roc_curve, confusion_matrix, classification_report
 )
 import joblib
+import json
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.combine import SMOTETomek
@@ -325,10 +326,10 @@ class ChurnPredictor:
             'Random Forest': {
                 'model': RandomForestClassifier(random_state=42, class_weight='balanced'),
                 'params': {
-                    'n_estimators': [150, 200, 250],  # More trees for better accuracy
-                    'max_depth': [6, 8, 10],  # Balanced depth for 85% accuracy
-                    'min_samples_split': [20, 30, 40],  # Moderate regularization
-                    'min_samples_leaf': [10, 15, 20],  # Balanced regularization
+                    'n_estimators': [150, 200],  # Moderate number of trees
+                    'max_depth': [5, 6, 7],  # Shallower trees to reduce overfitting
+                    'min_samples_split': [40, 50, 60],  # Higher threshold to prevent overfitting
+                    'min_samples_leaf': [20, 25, 30],  # Strong regularization
                     'max_features': ['sqrt', 'log2']  # Feature diversity
                 }
             }
@@ -519,29 +520,94 @@ class ChurnPredictor:
         metadata = {
             'best_model': best_model_name,
             'random_forest': {
-                'accuracy': results['Random Forest']['accuracy'],
-                'train_accuracy': results['Random Forest']['train_accuracy'],
-                'cv_mean': results['Random Forest']['cv_mean'],
-                'cv_std': results['Random Forest']['cv_std'],
-                'overfitting_gap': results['Random Forest']['overfitting_gap'],
-                'roc_auc': results['Random Forest']['roc_auc'],
-                'best_params': results['Random Forest']['best_params']
+                'accuracy': float(results['Random Forest']['accuracy']),
+                'train_accuracy': float(results['Random Forest']['train_accuracy']),
+                'cv_mean': float(results['Random Forest']['cv_mean']),
+                'cv_std': float(results['Random Forest']['cv_std']),
+                'overfitting_gap': float(results['Random Forest']['overfitting_gap']),
+                'roc_auc': float(results['Random Forest']['roc_auc']),
+                'best_params': {k: (float(v) if isinstance(v, (np.integer, np.floating)) else v) 
+                               for k, v in results['Random Forest']['best_params'].items()}
             },
             'logistic_regression': {
-                'accuracy': results['Logistic Regression']['accuracy'],
-                'train_accuracy': results['Logistic Regression']['train_accuracy'],
-                'cv_mean': results['Logistic Regression']['cv_mean'],
-                'cv_std': results['Logistic Regression']['cv_std'],
-                'overfitting_gap': results['Logistic Regression']['overfitting_gap'],
-                'roc_auc': results['Logistic Regression']['roc_auc'],
-                'best_params': results['Logistic Regression']['best_params']
+                'accuracy': float(results['Logistic Regression']['accuracy']),
+                'train_accuracy': float(results['Logistic Regression']['train_accuracy']),
+                'cv_mean': float(results['Logistic Regression']['cv_mean']),
+                'cv_std': float(results['Logistic Regression']['cv_std']),
+                'overfitting_gap': float(results['Logistic Regression']['overfitting_gap']),
+                'roc_auc': float(results['Logistic Regression']['roc_auc']),
+                'best_params': {k: (float(v) if isinstance(v, (np.integer, np.floating)) else v) 
+                               for k, v in results['Logistic Regression']['best_params'].items()}
             },
             'pca_used': self.use_pca if hasattr(self, 'use_pca') else False,
-            'pca_variance_retained': self.explained_variance_ratio_ if (hasattr(self, 'use_pca') and self.use_pca and hasattr(self, 'explained_variance_ratio_')) else None
+            'pca_variance_retained': float(self.explained_variance_ratio_) if (hasattr(self, 'use_pca') and self.use_pca and hasattr(self, 'explained_variance_ratio_')) else None
         }
+        
+        # Save as JSON (Git-friendly)
+        metadata_json_path = 'model_metadata.json'
+        with open(metadata_json_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        print(f"✓ Model metadata saved (JSON): {metadata_json_path}")
+        
+        # Also save as pickle for compatibility
         metadata_path = 'model_metadata.pkl'
         joblib.dump(metadata, metadata_path)
-        print(f"✓ Model metadata saved: {metadata_path}")
+        print(f"✓ Model metadata saved (PKL): {metadata_path}")
+        
+        # Save model configurations in JSON format (Git-friendly)
+        model_configs = {
+            'random_forest': {
+                'model_type': 'RandomForestClassifier',
+                'hyperparameters': results['Random Forest']['best_params'],
+                'feature_importances': results['Random Forest']['model'].feature_importances_.tolist() if hasattr(results['Random Forest']['model'], 'feature_importances_') else None,
+                'n_estimators': results['Random Forest']['model'].n_estimators if hasattr(results['Random Forest']['model'], 'n_estimators') else None,
+                'max_depth': results['Random Forest']['model'].max_depth if hasattr(results['Random Forest']['model'], 'max_depth') else None
+            },
+            'logistic_regression': {
+                'model_type': 'LogisticRegression',
+                'hyperparameters': results['Logistic Regression']['best_params'],
+                'coefficients': results['Logistic Regression']['model'].coef_.tolist() if hasattr(results['Logistic Regression']['model'], 'coef_') else None,
+                'intercept': results['Logistic Regression']['model'].intercept_.tolist() if hasattr(results['Logistic Regression']['model'], 'intercept_') else None
+            },
+            'scaler': {
+                'type': 'StandardScaler',
+                'mean': self.scaler.mean_.tolist() if hasattr(self.scaler, 'mean_') else None,
+                'scale': self.scaler.scale_.tolist() if hasattr(self.scaler, 'scale_') else None
+            },
+            'pca': {
+                'used': self.use_pca if hasattr(self, 'use_pca') else False,
+                'n_components': int(self.n_components) if hasattr(self, 'n_components') else None,
+                'explained_variance_ratio': self.pca.explained_variance_ratio_.tolist() if (hasattr(self, 'pca') and self.pca is not None) else None
+            }
+        }
+        
+        config_json_path = 'model_configs.json'
+        with open(config_json_path, 'w') as f:
+            json.dump(model_configs, f, indent=2)
+        print(f"✓ Model configurations saved (JSON): {config_json_path}")
+        
+        # Create models directory and save models there (can be tracked if needed)
+        os.makedirs('models', exist_ok=True)
+        
+        # Save models in models directory
+        models_dir = 'models'
+        rf_model_path_tracked = os.path.join(models_dir, 'random_forest_model.pkl')
+        lr_model_path_tracked = os.path.join(models_dir, 'logistic_regression_model.pkl')
+        scaler_path_tracked = os.path.join(models_dir, 'scaler.pkl')
+        
+        joblib.dump(results['Random Forest']['model'], rf_model_path_tracked)
+        joblib.dump(results['Logistic Regression']['model'], lr_model_path_tracked)
+        joblib.dump(self.scaler, scaler_path_tracked)
+        
+        if self.use_pca and hasattr(self, 'pca') and self.pca is not None:
+            pca_path_tracked = os.path.join(models_dir, 'pca.pkl')
+            joblib.dump(self.pca, pca_path_tracked)
+        
+        if hasattr(self, 'label_encoders') and self.label_encoders:
+            encoders_path_tracked = os.path.join(models_dir, 'label_encoders.pkl')
+            joblib.dump(self.label_encoders, encoders_path_tracked)
+        
+        print(f"✓ Models also saved in '{models_dir}/' directory")
         
         return results
     

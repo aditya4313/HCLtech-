@@ -1,0 +1,32 @@
+{
+  "best_model": "Random Forest",
+  "random_forest": {
+    "accuracy": 0.800854244527496,
+    "train_accuracy": 0.8472834067547724,
+    "cv_mean": 0.7946869576825524,
+    "cv_std": 0.006672005873501432,
+    "overfitting_gap": 0.046429162227276444,
+    "roc_auc": 0.8905490335586386,
+    "best_params": {
+      "n_estimators": 200,
+      "min_samples_split": 50,
+      "min_samples_leaf": 25,
+      "max_features": "sqrt",
+      "max_depth": 7
+    }
+  },
+  "logistic_regression": {
+    "accuracy": 0.7784303256807261,
+    "train_accuracy": 0.7801361633960753,
+    "cv_mean": 0.7800026698705113,
+    "cv_std": 0.002781026118809184,
+    "overfitting_gap": 0.0017058377153491566,
+    "roc_auc": 0.8534010161544847,
+    "best_params": {
+      "solver": "liblinear",
+      "C": 1.0
+    }
+  },
+  "pca_used": true,
+  "pca_variance_retained": 0.9665265975366332
+}

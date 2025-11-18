@@ -120,18 +120,28 @@ Launch the professional web interface:
 streamlit run app.py
 ```
 
-The app will open in your browser with a clean, minimal interface featuring:
+The app will automatically open in your browser at `http://localhost:8501` with a clean, minimal interface featuring:
 - **Interactive Dashboard**: Easy-to-use web interface
 - **Data Analysis**: Explore dataset statistics and visualizations
 - **Model Training**: Train models with customizable parameters
 - **Results Visualization**: View confusion matrix, ROC curve, and metrics
 - **Real-time Progress**: Track training progress with progress bars
+- **Churn Prediction**: Interactive form to predict customer churn
 
 **Features of the Web App:**
 - 📊 **Overview Tab**: Project information and key metrics
 - 🔍 **Data Analysis Tab**: Dataset exploration and statistics
 - 🤖 **Model Training Tab**: Train models with progress tracking
 - 📈 **Results Tab**: Comprehensive model evaluation and visualizations
+- 🔮 **Predict Churn Tab**: Interactive form to predict customer churn with real-time predictions
+
+**Quick Start:**
+1. Run `streamlit run app.py` in your terminal
+2. The app opens automatically in your browser
+3. Click "🚀 Train Model" in the sidebar to train models
+4. Go to "🔮 Predict Churn" tab to make predictions
+
+**Note:** If port 8501 is busy, use: `streamlit run app.py --server.port 8502`
 
 ## 📈 Model Evaluation Summary
 
