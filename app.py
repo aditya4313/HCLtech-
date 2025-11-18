@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -91,6 +92,7 @@ class ChurnPredictor:
     
     def __init__(self):
         self.scaler = StandardScaler()
+        self.pca = None
         self.label_encoders = {}
         self.model = None
         self.X_train = None
@@ -100,6 +102,9 @@ class ChurnPredictor:
         self.y_pred = None
         self.y_pred_proba = None
         self.results = {}
+        self.use_pca = True
+        self.n_components = None
+        self.explained_variance_ratio_ = None
         
     def download_data(self):
         """Download dataset from Kaggle"""
@@ -469,14 +474,26 @@ def main():
             status_text.text("✅ Step 3/6: Class Imbalance Handled")
             progress_bar.progress(60)
             
-            # Step 4: Split and Scale
-            status_text.text("📊 Step 4/6: Splitting and Scaling Data...")
+            # Step 4: Split, Scale, and Apply PCA
+            status_text.text("📊 Step 4/6: Splitting, Scaling & Applying PCA...")
             progress_bar.progress(70)
             X_train, X_test, y_train, y_test = train_test_split(
                 X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
             )
             X_train_scaled = predictor.scaler.fit_transform(X_train)
             X_test_scaled = predictor.scaler.transform(X_test)
+            
+            # Apply PCA
+            if X_train_scaled.shape[1] > 2:
+                predictor.pca = PCA(n_components=0.95, random_state=42)
+                X_train_scaled = predictor.pca.fit_transform(X_train_scaled)
+                X_test_scaled = predictor.pca.transform(X_test_scaled)
+                predictor.n_components = predictor.pca.n_components_
+                predictor.explained_variance_ratio_ = predictor.pca.explained_variance_ratio_.sum()
+                predictor.use_pca = True
+            else:
+                predictor.use_pca = False
+            
             predictor.X_test = X_test
             predictor.y_test = y_test
             
@@ -498,6 +515,18 @@ def main():
             st.success("✅ Model Training Completed Successfully!")
             st.balloons()
             
+            # Display PCA information
+            if predictor.use_pca:
+                st.markdown("### PCA Dimensionality Reduction")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Original Features", f"{X.shape[1]}")
+                with col2:
+                    st.metric("Reduced Features", f"{predictor.n_components}")
+                with col3:
+                    st.metric("Variance Retained", f"{predictor.explained_variance_ratio_*100:.2f}%")
+                st.success(f"✓ Features reduced from {X.shape[1]} to {predictor.n_components} while retaining {predictor.explained_variance_ratio_*100:.2f}% variance")
+            
             # Display model comparison
             st.markdown("### Model Comparison")
             comparison_df = pd.DataFrame({
@@ -516,12 +545,13 @@ def main():
             st.dataframe(comparison_df.style.highlight_max(axis=0, color='#d4edda'), use_container_width=True)
             
             best_result = results[best_model]
+            pca_info = f"\n- PCA: {X.shape[1]} → {predictor.n_components} features ({predictor.explained_variance_ratio_*100:.2f}% variance)" if predictor.use_pca else ""
             st.info(f"""
             🏆 **Best Model:** {best_model}
             - Test Accuracy: {best_result['accuracy']:.2%}
             - CV Mean Accuracy: {best_result['cv_mean']:.2%} (±{best_result['cv_std']*2:.2%})
             - Overfitting Gap: {best_result['overfitting_gap']:.4f}
-            - ROC-AUC: {best_result['roc_auc']:.4f}
+            - ROC-AUC: {best_result['roc_auc']:.4f}{pca_info}
             """)
             
             # Overfitting warning

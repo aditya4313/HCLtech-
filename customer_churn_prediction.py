@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -40,6 +41,7 @@ class ChurnPredictor:
     
     def __init__(self):
         self.scaler = StandardScaler()
+        self.pca = None
         self.label_encoders = {}
         self.model = None
         self.X_train = None
@@ -48,6 +50,9 @@ class ChurnPredictor:
         self.y_test = None
         self.y_pred = None
         self.y_pred_proba = None
+        self.use_pca = True
+        self.n_components = None
+        self.explained_variance_ratio_ = None
         
     def download_data(self):
         """Download dataset from Kaggle using kagglehub"""
@@ -256,10 +261,10 @@ class ChurnPredictor:
             print("\n✓ Dataset is relatively balanced, no resampling needed.")
             return X, y
     
-    def split_and_scale(self, X, y):
-        """Split data into train/test sets and scale features"""
+    def split_and_scale(self, X, y, use_pca=True, variance_threshold=0.95):
+        """Split data into train/test sets, scale features, and apply PCA"""
         print("\n" + "=" * 60)
-        print("STEP 5: Train-Test Split & Feature Scaling")
+        print("STEP 5: Train-Test Split, Feature Scaling & PCA")
         print("=" * 60)
         
         # Split data
@@ -269,12 +274,36 @@ class ChurnPredictor:
         
         print(f"\nTraining set: {self.X_train.shape}")
         print(f"Test set: {self.X_test.shape}")
+        print(f"Original number of features: {X.shape[1]}")
         
         # Scale features
         self.X_train_scaled = self.scaler.fit_transform(self.X_train)
         self.X_test_scaled = self.scaler.transform(self.X_test)
         
-        print("\n✓ Data split and scaled successfully!")
+        print("\n✓ Data scaled successfully!")
+        
+        # Apply PCA if enabled
+        if use_pca and X.shape[1] > 2:
+            print(f"\nApplying PCA (target variance: {variance_threshold*100:.1f}%)...")
+            self.pca = PCA(n_components=variance_threshold, random_state=42)
+            self.X_train_scaled = self.pca.fit_transform(self.X_train_scaled)
+            self.X_test_scaled = self.pca.transform(self.X_test_scaled)
+            
+            self.n_components = self.pca.n_components_
+            self.explained_variance_ratio_ = self.pca.explained_variance_ratio_.sum()
+            
+            print(f"✓ PCA applied successfully!")
+            print(f"  Reduced dimensions: {X.shape[1]} → {self.n_components}")
+            print(f"  Explained variance: {self.explained_variance_ratio_*100:.2f}%")
+            print(f"  Variance retained: {self.explained_variance_ratio_*100:.2f}%")
+        else:
+            print("\n⚠ PCA skipped (disabled or insufficient features)")
+            self.use_pca = False
+        
+        print(f"\nFinal feature dimensions:")
+        print(f"  Training set: {self.X_train_scaled.shape}")
+        print(f"  Test set: {self.X_test_scaled.shape}")
+        
         return self.X_train_scaled, self.X_test_scaled, self.y_train, self.y_test
     
     def train_models(self):
@@ -465,6 +494,13 @@ class ChurnPredictor:
         print(f"  F1-Score:          {f1:.4f}")
         print(f"  ROC-AUC:           {roc_auc:.4f}")
         
+        if self.use_pca and self.n_components:
+            print(f"\nPCA Dimensionality Reduction:")
+            print(f"  Original Features: {len(self.X.columns)}")
+            print(f"  Reduced Features:  {self.n_components}")
+            print(f"  Variance Retained: {self.explained_variance_ratio_*100:.2f}%")
+            print(f"  ✓ Features reduced while maintaining {self.explained_variance_ratio_*100:.2f}% variance")
+        
         print(f"\nOverfitting Analysis:")
         if overfitting_gap < 0.02:
             print(f"  ✓ Excellent: No significant overfitting detected")
@@ -590,8 +626,8 @@ class ChurnPredictor:
         # Step 4: Handle imbalance
         X_balanced, y_balanced = self.handle_imbalance(X, y, method=imbalance_method)
         
-        # Step 5: Split and scale
-        self.split_and_scale(X_balanced, y_balanced)
+        # Step 5: Split, scale, and apply PCA
+        self.split_and_scale(X_balanced, y_balanced, use_pca=True, variance_threshold=0.95)
         
         # Step 6: Train models
         self.train_models()

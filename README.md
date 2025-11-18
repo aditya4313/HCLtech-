@@ -43,6 +43,12 @@ The dataset is downloaded from Kaggle using `kagglehub`:
          │
          ▼
 ┌─────────────────────────┐
+│ PCA Dimensionality      │
+│ Reduction (95% variance)│
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
 │ Model Training          │
 │ (Multiple Algorithms)   │
 └────────┬────────────────┘
@@ -187,8 +193,12 @@ SMOTE creates synthetic samples of the minority class by:
 ml-dravit/
 │
 ├── customer_churn_prediction.py  # Main ML pipeline script
+├── customer_churn_prediction.ipynb  # Jupyter notebook version
+├── app.py                        # Streamlit web application
 ├── requirements.txt              # Python dependencies
 ├── README.md                     # Project documentation
+├── render.yaml                   # Render deployment configuration
+├── .streamlit/config.toml        # Streamlit configuration
 │
 ├── confusion_matrix.png          # Generated visualization
 ├── roc_curve.png                 # Generated visualization
@@ -200,10 +210,13 @@ ml-dravit/
 
 1. **Automated Data Download**: Uses Kaggle Hub API
 2. **Comprehensive Preprocessing**: Handles missing values, encoding, scaling
-3. **Imbalance Handling**: Multiple techniques available
-4. **Model Comparison**: Tests multiple algorithms automatically
-5. **Rich Visualizations**: Confusion matrix and ROC curve
-6. **Detailed Explanations**: Metrics and visualizations explained
+3. **PCA Dimensionality Reduction**: Reduces features while retaining 95% variance
+4. **Imbalance Handling**: Multiple techniques available (SMOTE, SMOTE-Tomek)
+5. **Cross-Validation**: 5-fold stratified cross-validation for robust evaluation
+6. **Overfitting Detection**: Compares train vs test performance
+7. **Model Comparison**: Tests multiple algorithms automatically
+8. **Rich Visualizations**: Confusion matrix and ROC curve
+9. **Detailed Explanations**: Metrics and visualizations explained
 
 ## 📝 Evaluation Metrics Explained
 
@@ -261,6 +274,75 @@ Modify the `train_models()` method to customize:
 ## 🤝 Contributing
 
 Feel free to submit issues, fork the repository, and create pull requests for any improvements.
+
+## 🚀 Deployment on Render
+
+### Prerequisites
+- A GitHub account
+- A Render account (sign up at [render.com](https://render.com))
+
+### Step-by-Step Deployment
+
+1. **Push your code to GitHub**
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/yourusername/ml-dravit.git
+   git push -u origin main
+   ```
+
+2. **Create a new Web Service on Render**
+   - Go to [Render Dashboard](https://dashboard.render.com)
+   - Click "New +" → "Web Service"
+   - Connect your GitHub repository
+
+3. **Configure the Service**
+   - **Name**: `customer-churn-prediction` (or your preferred name)
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true`
+   - **Plan**: Select Free tier (or upgrade for better performance)
+
+4. **Environment Variables (Optional)**
+   - If you need Kaggle API credentials, add them in the Environment section:
+     - `KAGGLE_USERNAME`: Your Kaggle username
+     - `KAGGLE_KEY`: Your Kaggle API key
+
+5. **Deploy**
+   - Click "Create Web Service"
+   - Render will automatically build and deploy your app
+   - Wait for the build to complete (usually 2-5 minutes)
+   - Your app will be live at `https://your-app-name.onrender.com`
+
+### Using render.yaml (Alternative Method)
+
+If you've included `render.yaml` in your repository, Render will automatically detect it:
+- Simply connect your GitHub repository
+- Render will use the configuration from `render.yaml`
+- No manual configuration needed!
+
+### Troubleshooting
+
+**Build fails:**
+- Check that all dependencies are in `requirements.txt`
+- Ensure Python version is compatible (3.8+)
+
+**App doesn't start:**
+- Verify the start command is correct
+- Check logs in Render dashboard for errors
+- Ensure `app.py` is in the root directory
+
+**Kaggle download fails:**
+- Add Kaggle credentials as environment variables
+- Or use the "Upload File" option in the app instead
+
+### Free Tier Limitations
+
+- Apps on free tier spin down after 15 minutes of inactivity
+- First request after spin-down may take 30-60 seconds
+- Consider upgrading to paid tier for always-on availability
 
 ## 📄 License
 
