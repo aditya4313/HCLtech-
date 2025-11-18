@@ -1,0 +1,9 @@
+version: "3.9"
+
+services:
+  churn-ui:
+    build: .
+    container_name: churn-ui
+    ports:
+      - "9876:7860"
+    restart: unless-stopped
